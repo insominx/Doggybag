@@ -67,6 +67,7 @@ from .workflow import (
     download_media,
     download_provider_transcript,
     entry_url,
+    fallback_format_for,
     folder_snapshot,
     is_direct_entry,
     load_dev_defaults,
@@ -617,7 +618,7 @@ class AppController:
         else:
             message = (
                 "The selected format is not available for this video.\n"
-                "Retry with Best (single file)?"
+                "Retry with the best available format?"
             )
         policy = self.batch_prompt_policy
         if policy is None:
@@ -2614,6 +2615,11 @@ class AppController:
                 labels=self.format_label_map,
                 progress_hook=hook,
                 on_format_fallback=on_format_fallback,
+                fallback_format=fallback_format_for(
+                    format_id,
+                    ffmpeg_available=bool(getattr(self, "ffmpeg_available", True)),
+                    extract_audio=is_audio_extract_format(format_id),
+                ),
                 recent=self._recent_download_outputs,
                 verify=self._verify_download_outputs,
                 snapshot=self._folder_snapshot,

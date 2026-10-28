@@ -315,6 +315,33 @@ class TestDownloadMedia(_Logs, unittest.TestCase):
         self.assertEqual(self.manager.download.call_args.args[2], os.path.join(self.folder, "clip.%(ext)s"))
 
 
+class TestFallbackFormat(unittest.TestCase):
+    def test_merges_when_ffmpeg_available(self) -> None:
+        merged = workflow.MERGED_BEST_FORMAT
+        self.assertEqual(workflow.fallback_format_for("137", ffmpeg_available=True, extract_audio=False), merged)
+        self.assertEqual(workflow.fallback_format_for("137", ffmpeg_available=False, extract_audio=False), "best")
+        self.assertEqual(workflow.fallback_format_for("bestaudio", ffmpeg_available=True, extract_audio=True), "best")
+        # The merged preset itself being unavailable still gets a single-file retry.
+        self.assertEqual(workflow.fallback_format_for(merged, ffmpeg_available=True, extract_audio=False), "best")
+
+    def test_gui_download_retries_unavailable_format_with_merged_best(self) -> None:
+        app = object.__new__(AppController)
+        app.main_thread_id = threading.get_ident()
+        app.ffmpeg_available = True
+        app.format_label_map = {workflow.MERGED_BEST_FORMAT: "Best (A+V)", "best": "Best (single file)"}
+        app.download_manager = mock.Mock()
+        app.download_manager.download.side_effect = [Exception("ERROR: Requested format is not available"), False]
+        app.confirm_format_fallback = mock.Mock(return_value=True)
+        for name in ("log", "log_error", "set_progress", "queue_card_progress", "queue_card_status", "queue_card_busy"):
+            setattr(app, name, mock.Mock())
+        app._folder_snapshot = mock.Mock(return_value="")
+        with tempfile.TemporaryDirectory() as folder:
+            app.download_video(URL, "137", folder)
+        selectors = [call.args[1] for call in app.download_manager.download.call_args_list]
+        self.assertEqual(selectors, ["137", workflow.MERGED_BEST_FORMAT])
+        self.assertEqual(app.last_selected_label, "Best (A+V)")
+
+
 class TestResolveMergeFormat(_Logs, unittest.TestCase):
     def merge(self, answer, *, ffmpeg_available=False, format_id="bestvideo+bestaudio/best"):
         return workflow.resolve_merge_format(

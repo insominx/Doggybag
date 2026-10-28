@@ -19,6 +19,7 @@ from ..app.workflow import (
     download_media,
     download_provider_transcript,
     entry_url,
+    fallback_format_for,
     is_direct_entry,
     resolve_merge_format,
     sanitize_entries,
@@ -402,11 +403,11 @@ def _download_one(session: Session, run: Run, args, url: str, entries: list[dict
                 labels=labels,
                 name_template=_name_template(args.name),
                 progress_hook=_ytdlp_progress(session, index),
-                # Many YouTube videos no longer offer a single muxed file, so a
-                # bare "best" fallback fails there; merge when ffmpeg allows it.
-                fallback_format=FORMAT_PRESETS["best"]
-                if session.ffmpeg_available and not is_audio_extract_format(effective)
-                else "best",
+                fallback_format=fallback_format_for(
+                    effective,
+                    ffmpeg_available=session.ffmpeg_available,
+                    extract_audio=is_audio_extract_format(effective),
+                ),
             )
             item["player_client"] = session.manager.last_player_client
             item["cookies"] = session.cookies_report()

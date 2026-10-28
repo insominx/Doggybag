@@ -44,6 +44,7 @@ LogFn = Callable[[str], None]
 LogErrorFn = Callable[[str, Exception], None]
 
 DEFAULT_NAME_TEMPLATE = "%(title)s.%(ext)s"
+MERGED_BEST_FORMAT = "bestvideo+bestaudio/best"
 TRANSCRIPT_NAME_TEMPLATE = "%(title)s.transcript.%(ext)s"
 
 # Intermediate files yt-dlp leaves while merging; never reported as outputs.
@@ -386,6 +387,17 @@ def resolve_merge_format(
     return format_id, fmt_label
 
 
+def fallback_format_for(format_id: str, *, ffmpeg_available: bool, extract_audio: bool) -> str:
+    """Selector to retry with after "format unavailable".
+
+    Many YouTube videos no longer offer a single muxed file, so a bare "best"
+    fails there; merge the best streams instead whenever ffmpeg can.
+    """
+    if ffmpeg_available and not extract_audio and format_id != MERGED_BEST_FORMAT:
+        return MERGED_BEST_FORMAT
+    return "best"
+
+
 @dataclass
 class MediaDownloadResult:
     ok: bool
@@ -674,6 +686,7 @@ def download_provider_transcript(
 __all__ = [
     "DEFAULT_NAME_TEMPLATE",
     "DirectMediaResult",
+    "MERGED_BEST_FORMAT",
     "FetchResolution",
     "MediaDownloadResult",
     "Prompter",
@@ -685,6 +698,7 @@ __all__ = [
     "download_media",
     "download_provider_transcript",
     "entry_url",
+    "fallback_format_for",
     "folder_snapshot",
     "is_direct_entry",
     "load_dev_defaults",
