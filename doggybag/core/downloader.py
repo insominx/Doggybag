@@ -9,10 +9,12 @@ from typing import Callable
 from .cookie_prefs import normalize_cookies_browser
 from .errors import CookiesRequiredError, DownloadStalledError, NoTranscriptAvailableError
 from .helpers import AUDIO_EXTRACT_FORMAT, audio_extract_format_selector, audio_extract_postprocessors
+import os
 import sys
 import subprocess
 import re
 import shutil
+import tempfile
 import time
 from urllib.parse import urlparse
 import yt_dlp
@@ -581,6 +583,51 @@ class DownloadManager:
         By default a final non-cookie failure goes to ``log_error`` and returns
         False. ``raise_errors=True`` raises it instead so callers can classify it.
         """
+        folder = os.path.dirname(out_path)
+        if not extract_audio or not folder or "%" in folder or not os.path.isdir(folder):
+            return self._download(url, format_id, out_path, progress_hook, post_hook, extract_audio,
+                                  raise_errors=raise_errors)
+        # MP3 extraction downloads a source file named like the video (title.webm)
+        # and deletes it afterwards. In the user's folder that source can be an
+        # existing video download, which yt-dlp would reuse and then delete. Work
+        # in a private folder and move only the finished MP3 into place.
+        try:
+            workspace = tempfile.mkdtemp(prefix=".doggybag-audio-", dir=folder)
+        except OSError:
+            return self._download(url, format_id, out_path, progress_hook, post_hook, extract_audio,
+                                  raise_errors=raise_errors)
+
+        def deliver(path: str) -> None:
+            final = os.path.join(folder, os.path.basename(path))
+            if os.path.abspath(path) != os.path.abspath(final):
+                os.replace(path, final)
+            if post_hook:
+                post_hook(final)
+
+        try:
+            return self._download(
+                url,
+                format_id,
+                os.path.join(workspace, os.path.basename(out_path)),
+                progress_hook,
+                deliver,
+                extract_audio,
+                raise_errors=raise_errors,
+            )
+        finally:
+            shutil.rmtree(workspace, ignore_errors=True)
+
+    def _download(
+        self,
+        url: str,
+        format_id: str,
+        out_path: str,
+        progress_hook: Callable | None,
+        post_hook: Callable[[str], None] | None,
+        extract_audio: bool,
+        *,
+        raise_errors: bool,
+    ) -> bool:
         self._reset_cookie_state()
         self.last_player_client = None
         resolved_format = format_id

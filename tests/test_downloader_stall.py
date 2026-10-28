@@ -200,6 +200,50 @@ class TestDownloadContract(unittest.TestCase):
         self.assertEqual(captured[0].get("extract_flat"), "in_playlist")
         self.assertNotIn("extract_flat", captured[1])
 
+    def test_mp3_extract_never_consumes_an_existing_video(self) -> None:
+        """yt-dlp reuses a same-named source file and deletes it after extraction.
+
+        Downloading Audio (MP3) after the video into the same folder used to
+        delete the video. Extraction now runs in a private workspace.
+        """
+        import os
+        import tempfile
+        from pathlib import Path
+
+        class FakeYoutubeDL:
+            def __init__(self, opts):
+                self.opts = opts
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def download(self, _urls):
+                source = Path(self.opts["outtmpl"].replace("%(title)s", "Talk").replace("%(ext)s", "webm"))
+                if not source.exists():
+                    source.write_bytes(b"audio")
+                mp3 = source.with_suffix(".mp3")
+                mp3.write_bytes(b"mp3")
+                source.unlink()  # FFmpegExtractAudio without keepvideo
+                for hook in self.opts["post_hooks"]:
+                    hook(str(mp3))
+
+        with tempfile.TemporaryDirectory() as folder:
+            video = Path(folder) / "Talk.webm"
+            video.write_bytes(b"the user's video")
+            delivered = []
+            manager = DownloadManager(ydl_logger=DummyLogger())
+            with patch("doggybag.core.downloader.yt_dlp.YoutubeDL", FakeYoutubeDL):
+                ok = manager.download(f"https://{VIDEO_HOST_A}/watch/1", "bestaudio",
+                                      os.path.join(folder, "%(title)s.%(ext)s"),
+                                      post_hook=delivered.append, extract_audio=True)
+            self.assertTrue(ok)
+            self.assertEqual(video.read_bytes(), b"the user's video")
+            self.assertEqual(delivered, [str(Path(folder) / "Talk.mp3")])
+            self.assertEqual(sorted(p.name for p in Path(folder).iterdir()), ["Talk.mp3", "Talk.webm"])
+
     def test_stall_message_classifies_as_media_stall(self) -> None:
         reason, hint = classify_error(str(DownloadStalledError(rate=2048, window=30)))
         self.assertEqual(reason, "media stall/player client")
