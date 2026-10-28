@@ -220,7 +220,7 @@ export function createMock() {
         if (index === 2) {
           const ok = await ask("confirm", {
             title: "Format unavailable",
-            message: "The selected format is not available for this video.\nRetry with Best (single file)?",
+            message: "The selected format is not available for this video.\nRetry with the best available format?",
             confirm: "Continue",
             cancel: "Not now",
           });
